@@ -151,23 +151,83 @@ setup_plugins() {
     echo "==> Plugins directory ready ($PLUGIN_COUNT plugin(s) found)"
 }
 
-# ─── Configure AuthMe sessions (only ask password if IP changes) ───
+# ─── Configure AuthMe (sessions + relaxed password policy) ───
 configure_authme() {
-    local config="/data/plugins/AuthMe/config.yml"
-    if [ -f "$config" ]; then
-        echo "==> Configuring AuthMe sessions..."
+    mkdir -p /data/plugins/AuthMe
 
-        # Enable sessions ONLY in the sessions section (not other 'enabled' fields)
-        sed -i '/sessions:/,/timeout:/ { s/enabled: false/enabled: true/ }' "$config"
-
-        # Set session timeout to ~2 years (essentially permanent - only IP change triggers re-login)
-        sed -i '/sessions:/,/timeout:/ { s/timeout: [0-9]*/timeout: 1051200/ }' "$config"
-
-        echo "==> AuthMe sessions enabled (1051200 min / ~2 year timeout)"
-        echo "==> Players only need to re-enter password if their IP changes"
-    else
-        echo "==> AuthMe config not found yet (will be created on first run)"
+    # Delete old database so players can re-register fresh
+    if [ -f "/data/plugins/AuthMe/authme.db" ]; then
+        echo "==> Removing old AuthMe database for clean start..."
+        rm -f /data/plugins/AuthMe/authme.db
     fi
+
+    local config="/data/plugins/AuthMe/config.yml"
+
+    # Write a complete AuthMe config (overwrite every deploy to ensure correct settings)
+    echo "==> Writing AuthMe config..."
+    cat > "$config" <<'AUTHME_CFG'
+DataSource:
+    backend: SQLITE
+    mySQLHost: 127.0.0.1
+    mySQLPort: '3306'
+    mySQLUsername: authme
+    mySQLPassword: '12345'
+    mySQLDatabase: authme
+    mySQLTablename: authme
+    mySQLColumnGroup: ''
+settings:
+    sessions:
+        enabled: true
+        timeout: 1051200
+    restrictions:
+        maxRegPerIp: 0
+        maxLoginPerIp: 0
+        maxJoinPerIp: 0
+        allowedNicknameCharacters: '[a-zA-Z0-9_]*'
+        minNicknameLength: 3
+        maxNicknameLength: 20
+        kickOnWrongPassword: false
+        allowMovement: false
+        allowCommands: []
+        timeout: 120
+        displayOtherAccounts: false
+        removeJoinMessage: true
+        removeLeaveMessage: true
+    security:
+        minPasswordLength: 4
+        maxPasswordLength: 64
+        unsafePasswords:
+            - '123456'
+            - 'password'
+        passwordHash: SHA256
+    registration:
+        enabled: true
+        force: true
+        type: PASSWORD
+        secondArgument: CONFIRMATION
+    limbo:
+        allowFlight: false
+    GameMode:
+        ForceSurvivalMode: false
+    unrestrictions:
+        UnrestrictedName: []
+    permission:
+        EnablePermissionCheck: false
+Email:
+    noMailSent: true
+Hooks:
+    useEssentialsMotd: false
+    disableSocialSpy: true
+Protection:
+    enableProtection: false
+Purge:
+    useAutoPurge: false
+AUTHME_CFG
+
+    echo "==> AuthMe configured!"
+    echo "==> Sessions: ON (timeout: ~2 years, IP-locked)"
+    echo "==> Min password length: 4 characters"
+    echo "==> Players only re-enter password if IP changes"
 }
 
 # ─── Run everything ───
