@@ -149,8 +149,48 @@ setup_plugins() {
         echo "==> Plugin already exists: AuthMe.jar"
     fi
 
+    # Simple Voice Chat (proximity voice chat)
+    echo "==> Checking Simple Voice Chat..."
+    if [ ! -f "/data/plugins/voicechat-bukkit.jar" ]; then
+        echo "==> Downloading Simple Voice Chat from Modrinth..."
+        # Get the latest Bukkit/Paper version from Modrinth API
+        VOICECHAT_URL=$(curl -s 'https://api.modrinth.com/v2/project/9eGKb6K1/version?loaders=%5B%22paper%22%2C%22bukkit%22%2C%22spigot%22%5D&limit=1' | jq -r '.[0].files[0].url')
+        if [ -n "$VOICECHAT_URL" ] && [ "$VOICECHAT_URL" != "null" ]; then
+            download_plugin "voicechat-bukkit.jar" "$VOICECHAT_URL"
+        else
+            echo "==> WARNING: Could not find Simple Voice Chat download URL"
+        fi
+    else
+        echo "==> Plugin already exists: voicechat-bukkit.jar"
+    fi
+
     PLUGIN_COUNT=$(find /data/plugins -name "*.jar" 2>/dev/null | wc -l)
     echo "==> Plugins directory ready ($PLUGIN_COUNT plugin(s) found)"
+}
+
+# ─── Configure Simple Voice Chat ───
+configure_voicechat() {
+    mkdir -p /data/plugins/voicechat
+    local config="/data/plugins/voicechat/voicechat-server.properties"
+
+    VOICE_PORT="${VOICE_PORT:-24454}"
+
+    echo "==> Configuring Simple Voice Chat (port $VOICE_PORT)..."
+    cat > "$config" <<EOF
+port=$VOICE_PORT
+bind_address=0.0.0.0
+max_voice_distance=48.0
+crouch_distance_multiplier=1.0
+whisper_distance_multiplier=0.5
+codec=OPUS
+voice_chat_muted_on_join=false
+force_voice_chat=false
+allow_recording=true
+spectator_interaction=false
+spectator_player_possession=false
+open_groups=true
+EOF
+    echo "==> Simple Voice Chat configured!"
 }
 
 # ─── Configure AuthMe (sessions + relaxed password policy) ───
@@ -231,6 +271,7 @@ download_paper
 accept_eula
 generate_server_properties
 setup_plugins
+configure_voicechat
 configure_authme
 setup_filebrowser
 
