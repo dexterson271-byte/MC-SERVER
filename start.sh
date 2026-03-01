@@ -159,16 +159,27 @@ setup_plugins() {
     # FastLogin (auto-authenticates premium players, blocks name stealing)
     echo "==> Checking FastLogin..."
     if [ ! -f "/data/plugins/FastLogin.jar" ]; then
-        FASTLOGIN_URL=$(curl -s "https://api.github.com/repos/games647/FastLogin/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar") and (.name | contains("bukkit") or contains("Bukkit"))) | .browser_download_url' | head -1)
-        if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
-            download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
+        echo "==> Trying Hangar API for FastLogin..."
+        # Try Hangar (PaperMC plugin repository) first
+        FASTLOGIN_URL=$(curl -s "https://hangar.papermc.io/api/v1/projects/FastLogin/versions?limit=1&offset=0&platform=PAPER" | jq -r '.result[0].downloads.PAPER.downloadUrl // empty' 2>/dev/null)
+        if [ -n "$FASTLOGIN_URL" ]; then
+            download_plugin "FastLogin.jar" "https://hangar.papermc.io${FASTLOGIN_URL}"
         else
-            # Try any jar if bukkit-specific not found
+            echo "==> Trying GitHub for FastLogin..."
+            # Fallback to GitHub releases
             FASTLOGIN_URL=$(curl -s "https://api.github.com/repos/games647/FastLogin/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
             if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
                 download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
             else
-                echo "==> WARNING: Could not find FastLogin download URL"
+                echo "==> Trying Modrinth for FastLogin..."
+                # Fallback to Modrinth
+                FASTLOGIN_URL=$(curl -s 'https://api.modrinth.com/v2/project/fastlogin/version?loaders=["paper"]&limit=1' | jq -r '.[0].files[0].url // empty' 2>/dev/null)
+                if [ -n "$FASTLOGIN_URL" ]; then
+                    download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
+                else
+                    echo "==> WARNING: Could not download FastLogin from any source!"
+                    echo "==> Please manually upload FastLogin.jar to /data/plugins/ via FileBrowser"
+                fi
             fi
         fi
     else
@@ -177,6 +188,21 @@ setup_plugins() {
 
     PLUGIN_COUNT=$(find /data/plugins -name "*.jar" 2>/dev/null | wc -l)
     echo "==> Plugins directory ready ($PLUGIN_COUNT plugin(s) found)"
+}
+
+# ─── Configure AuthMe sessions (enable auto-login on reconnect from same IP) ───
+configure_authme() {
+    local config="/data/plugins/AuthMe/config.yml"
+    if [ -f "$config" ]; then
+        echo "==> Configuring AuthMe sessions..."
+        # Enable sessions
+        sed -i 's/^\(\s*\)enabled: false/\1enabled: true/' "$config"
+        # Set session timeout to 12 hours (720 minutes)
+        sed -i 's/^\(\s*\)timeout: 10/\1timeout: 720/' "$config"
+        echo "==> AuthMe sessions enabled (720 min timeout)"
+    else
+        echo "==> AuthMe config not found yet (will be created on first run)"
+    fi
 }
 
 # ─── Run everything ───
@@ -190,6 +216,7 @@ download_paper
 accept_eula
 generate_server_properties
 setup_plugins
+configure_authme
 setup_filebrowser
 
 echo "==> Starting services via supervisord..."
