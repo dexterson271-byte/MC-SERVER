@@ -34,11 +34,13 @@ ENV MC_VERSION=latest \
     MAX_PLAYERS=20 \
     VIEW_DISTANCE=7 \
     SIMULATION_DISTANCE=5 \
+    VOICE_PORT=24454 \
     MOTD="A Minecraft Server on Railway"
 
 # Expose ports
 EXPOSE ${SERVER_PORT}/tcp
 EXPOSE ${FILEBROWSER_PORT}/tcp
+EXPOSE ${VOICE_PORT}/udp
 
 # Persistent data lives at /data — attach a Railway Volume mounted to /data
 
