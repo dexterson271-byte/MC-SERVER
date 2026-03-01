@@ -130,18 +130,9 @@ download_plugin() {
 setup_plugins() {
     mkdir -p /data/plugins
 
-    # ProtocolLib (required by FastLogin)
-    echo "==> Checking ProtocolLib..."
-    if [ ! -f "/data/plugins/ProtocolLib.jar" ]; then
-        PROTO_URL=$(curl -s "https://api.github.com/repos/dmulloy2/ProtocolLib/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
-        if [ -n "$PROTO_URL" ] && [ "$PROTO_URL" != "null" ]; then
-            download_plugin "ProtocolLib.jar" "$PROTO_URL"
-        else
-            echo "==> WARNING: Could not find ProtocolLib download URL"
-        fi
-    else
-        echo "==> Plugin already exists: ProtocolLib.jar"
-    fi
+    # Remove FastLogin and ProtocolLib if present (caused conflicts)
+    rm -f /data/plugins/FastLogin.jar /data/plugins/ProtocolLib.jar
+    rm -rf /data/plugins/FastLogin /data/plugins/ProtocolLib
 
     # AuthMe (password-based login for all players)
     echo "==> Checking AuthMe..."
@@ -156,59 +147,24 @@ setup_plugins() {
         echo "==> Plugin already exists: AuthMe.jar"
     fi
 
-    # FastLogin (auto-authenticates premium players, blocks name stealing)
-    echo "==> Checking FastLogin..."
-    if [ ! -f "/data/plugins/FastLogin.jar" ]; then
-
-        # Primary: TuxCoding/FastLogin GitHub releases
-        echo "==> Downloading FastLogin from TuxCoding/FastLogin..."
-        GH_RESPONSE=$(curl -s "https://api.github.com/repos/TuxCoding/FastLogin/releases/latest")
-        FASTLOGIN_URL=$(echo "$GH_RESPONSE" | jq -r '.assets[]? | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
-        echo "==> FastLogin URL: $FASTLOGIN_URL"
-        if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
-            download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
-        else
-            # If no jar in assets, try building the download URL from tag
-            TAG=$(echo "$GH_RESPONSE" | jq -r '.tag_name // empty')
-            if [ -n "$TAG" ]; then
-                echo "==> No jar asset found, checking all release assets..."
-                echo "$GH_RESPONSE" | jq -r '.assets[]? | "\(.name) -> \(.browser_download_url)"'
-                echo "==> Please manually download from https://github.com/TuxCoding/FastLogin/releases"
-                echo "==> and upload FastLogin.jar to /data/plugins/ via FileBrowser"
-            else
-                echo "==> WARNING: Could not fetch FastLogin releases"
-                echo "==> Please manually download from https://github.com/TuxCoding/FastLogin/releases"
-            fi
-        fi
-
-        # Verify download
-        if [ -f "/data/plugins/FastLogin.jar" ]; then
-            FSIZE=$(stat -c%s "/data/plugins/FastLogin.jar" 2>/dev/null || echo 0)
-            if [ "$FSIZE" -lt 1000 ]; then
-                echo "==> WARNING: FastLogin.jar seems too small (${FSIZE} bytes), likely a bad download"
-                rm -f "/data/plugins/FastLogin.jar"
-            else
-                echo "==> FastLogin.jar verified (${FSIZE} bytes)"
-            fi
-        fi
-    else
-        echo "==> Plugin already exists: FastLogin.jar"
-    fi
-
     PLUGIN_COUNT=$(find /data/plugins -name "*.jar" 2>/dev/null | wc -l)
     echo "==> Plugins directory ready ($PLUGIN_COUNT plugin(s) found)"
 }
 
-# ─── Configure AuthMe sessions (enable auto-login on reconnect from same IP) ───
+# ─── Configure AuthMe sessions (only ask password if IP changes) ───
 configure_authme() {
     local config="/data/plugins/AuthMe/config.yml"
     if [ -f "$config" ]; then
         echo "==> Configuring AuthMe sessions..."
-        # Enable sessions
-        sed -i 's/^\(\s*\)enabled: false/\1enabled: true/' "$config"
-        # Set session timeout to 12 hours (720 minutes)
-        sed -i 's/^\(\s*\)timeout: 10/\1timeout: 720/' "$config"
-        echo "==> AuthMe sessions enabled (720 min timeout)"
+
+        # Enable sessions ONLY in the sessions section (not other 'enabled' fields)
+        sed -i '/sessions:/,/timeout:/ { s/enabled: false/enabled: true/ }' "$config"
+
+        # Set session timeout to ~2 years (essentially permanent - only IP change triggers re-login)
+        sed -i '/sessions:/,/timeout:/ { s/timeout: [0-9]*/timeout: 1051200/ }' "$config"
+
+        echo "==> AuthMe sessions enabled (1051200 min / ~2 year timeout)"
+        echo "==> Players only need to re-enter password if their IP changes"
     else
         echo "==> AuthMe config not found yet (will be created on first run)"
     fi
