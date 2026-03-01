@@ -155,63 +155,67 @@ setup_plugins() {
 configure_authme() {
     mkdir -p /data/plugins/AuthMe
 
-    # Delete old database so players can re-register fresh (only on first deploy)
-    if [ ! -f "/data/plugins/AuthMe/.configured" ]; then
-        echo "==> First-time AuthMe setup: removing old database..."
-        rm -f /data/plugins/AuthMe/authme.db
-    fi
+    local config="/data/plugins/AuthMe/config.yml"
 
-    # ALWAYS delete old config so AuthMe regenerates a clean default
-    # (previous deploys may have written a broken config)
-    rm -f /data/plugins/AuthMe/config.yml
-    echo "==> Removed old AuthMe config (will be regenerated with proper defaults)"
+    if [ -f "$config" ]; then
+        # Config exists from previous run - patch it BEFORE server starts
+        # so AuthMe loads with sessions already enabled
+        echo "==> Patching AuthMe config before server starts..."
 
-    echo "==> Setting up post-start auto-configuration..."
+        # Enable sessions
+        sed -i '/sessions:/{ n; s/enabled: false/enabled: true/ }' "$config"
+        # Set session timeout to ~2 years
+        sed -i 's/timeout: 10$/timeout: 1051200/' "$config"
+        # Also handle if timeout was already patched previously
+        sed -i '/sessions:/,/timeout:/ { s/timeout: [0-9]*/timeout: 1051200/ }' "$config"
+        # Relax minimum password length to 4
+        sed -i 's/minPasswordLength: [0-9]*/minPasswordLength: 4/' "$config"
+        # Unlimited registrations per IP
+        sed -i 's/maxRegPerIp: [0-9]*/maxRegPerIp: 0/' "$config"
 
-    # Create a script that watches for config creation and patches it
-    cat > /data/plugins/AuthMe/patch-config.sh <<'PATCH'
+        echo "==> AuthMe config patched! Sessions ON, timeout ~2 years, min pass 4 chars"
+    else
+        # First run ever - no config exists yet
+        # AuthMe will generate a default config on startup
+        # We use a background patcher to modify it, then restart MC process
+        echo "==> First run: AuthMe config doesn't exist yet"
+        echo "==> Background patcher will configure it and restart MC automatically"
+
+        cat > /data/plugins/AuthMe/patch-config.sh <<'PATCH'
 #!/bin/bash
 CONFIG="/data/plugins/AuthMe/config.yml"
 echo "[AuthMe Patcher] Waiting for AuthMe to generate config..."
 for i in $(seq 1 120); do
     if [ -f "$CONFIG" ]; then
-        echo "[AuthMe Patcher] Config found! Waiting for AuthMe to finish writing..."
+        echo "[AuthMe Patcher] Config found! Waiting for write to finish..."
         sleep 5
 
         # Enable sessions
         sed -i '/sessions:/{ n; s/enabled: false/enabled: true/ }' "$CONFIG"
         # Set session timeout to ~2 years
         sed -i 's/timeout: 10$/timeout: 1051200/' "$CONFIG"
-        # Relax minimum password length to 4
+        sed -i '/sessions:/,/timeout:/ { s/timeout: [0-9]*/timeout: 1051200/ }' "$CONFIG"
+        # Relax minimum password length
         sed -i 's/minPasswordLength: [0-9]*/minPasswordLength: 4/' "$CONFIG"
         # Unlimited registrations per IP
         sed -i 's/maxRegPerIp: [0-9]*/maxRegPerIp: 0/' "$CONFIG"
 
-        touch /data/plugins/AuthMe/.configured
-        echo "[AuthMe Patcher] Config patched!"
-        echo "[AuthMe Patcher] Sessions ON, timeout ~2 years, min pass 4 chars"
-        echo "[AuthMe Patcher] Sending reload command to AuthMe..."
+        echo "[AuthMe Patcher] Config patched! Restarting MC to apply..."
 
-        # Send authme reload via screen/rcon or just echo to the MC stdin via supervisord
-        # Use supervisorctl to send the reload command to minecraft's stdin
-        echo "authme reload" | supervisorctl fg minecraft &>/dev/null || true
-
-        # Alternative: write to the server console directly
-        if [ -p /tmp/minecraft-console ]; then
-            echo "authme reload" > /tmp/minecraft-console
-        fi
-
-        echo "[AuthMe Patcher] Done! Config changes are active."
+        # Restart the minecraft process so AuthMe reloads with patched config
+        sleep 3
+        supervisorctl restart minecraft
+        echo "[AuthMe Patcher] MC restarted. Sessions are now active!"
         exit 0
     fi
     sleep 2
 done
 echo "[AuthMe Patcher] WARNING: Config was not generated within 4 minutes"
 PATCH
-    chmod +x /data/plugins/AuthMe/patch-config.sh
-    # Run patcher in background
-    nohup /data/plugins/AuthMe/patch-config.sh &>/data/authme-patcher.log &
-    echo "==> Background patcher started (will auto-patch config when AuthMe generates it)"
+        chmod +x /data/plugins/AuthMe/patch-config.sh
+        nohup /data/plugins/AuthMe/patch-config.sh &>/data/authme-patcher.log &
+        echo "==> Background patcher started"
+    fi
 }
 
 # ─── Run everything ───
