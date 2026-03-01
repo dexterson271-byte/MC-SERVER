@@ -24,7 +24,7 @@ RUN chmod +x /start.sh
 # Default environment variables (override in Railway dashboard)
 # Railway Pro: 32GB max per service — 28G for JVM, rest for OS + FileBrowser
 ENV MC_VERSION=latest \
-    MEMORY=28G \
+    MEMORY=8G \
     SERVER_PORT=25565 \
     FILEBROWSER_PORT=8080 \
     EULA=true \
@@ -32,7 +32,8 @@ ENV MC_VERSION=latest \
     DIFFICULTY=normal \
     GAMEMODE=survival \
     MAX_PLAYERS=20 \
-    VIEW_DISTANCE=10 \
+    VIEW_DISTANCE=7 \
+    SIMULATION_DISTANCE=5 \
     MOTD="A Minecraft Server on Railway"
 
 # Expose ports
