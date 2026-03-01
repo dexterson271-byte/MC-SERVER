@@ -79,7 +79,7 @@ gamemode=${GAMEMODE:-survival}
 max-players=${MAX_PLAYERS:-20}
 view-distance=${VIEW_DISTANCE:-10}
 motd=${MOTD:-A Minecraft Server on Railway}
-online-mode=true
+online-mode=false
 enable-command-block=true
 spawn-protection=0
 allow-flight=true
@@ -114,9 +114,67 @@ setup_filebrowser() {
     echo "==> (Set FILEBROWSER_PASS env var to change the password)"
 }
 
-# ─── Ensure plugins directory exists ───
+# ─── Download essential auth plugins ───
+download_plugin() {
+    local name="$1"
+    local url="$2"
+    local dest="/data/plugins/${name}"
+    if [ ! -f "$dest" ]; then
+        echo "==> Downloading plugin: $name"
+        wget -q -O "$dest" "$url" && echo "==> $name downloaded!" || echo "==> WARNING: Failed to download $name"
+    else
+        echo "==> Plugin already exists: $name"
+    fi
+}
+
 setup_plugins() {
     mkdir -p /data/plugins
+
+    # ProtocolLib (required by FastLogin)
+    echo "==> Checking ProtocolLib..."
+    if [ ! -f "/data/plugins/ProtocolLib.jar" ]; then
+        PROTO_URL=$(curl -s "https://api.github.com/repos/dmulloy2/ProtocolLib/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
+        if [ -n "$PROTO_URL" ] && [ "$PROTO_URL" != "null" ]; then
+            download_plugin "ProtocolLib.jar" "$PROTO_URL"
+        else
+            echo "==> WARNING: Could not find ProtocolLib download URL"
+        fi
+    else
+        echo "==> Plugin already exists: ProtocolLib.jar"
+    fi
+
+    # AuthMe (password-based login for all players)
+    echo "==> Checking AuthMe..."
+    if [ ! -f "/data/plugins/AuthMe.jar" ]; then
+        AUTHME_URL=$(curl -s "https://api.github.com/repos/AuthMe/AuthMeReloaded/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
+        if [ -n "$AUTHME_URL" ] && [ "$AUTHME_URL" != "null" ]; then
+            download_plugin "AuthMe.jar" "$AUTHME_URL"
+        else
+            echo "==> WARNING: Could not find AuthMe download URL"
+        fi
+    else
+        echo "==> Plugin already exists: AuthMe.jar"
+    fi
+
+    # FastLogin (auto-authenticates premium players, blocks name stealing)
+    echo "==> Checking FastLogin..."
+    if [ ! -f "/data/plugins/FastLogin.jar" ]; then
+        FASTLOGIN_URL=$(curl -s "https://api.github.com/repos/games647/FastLogin/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar") and (.name | contains("bukkit") or contains("Bukkit"))) | .browser_download_url' | head -1)
+        if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
+            download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
+        else
+            # Try any jar if bukkit-specific not found
+            FASTLOGIN_URL=$(curl -s "https://api.github.com/repos/games647/FastLogin/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
+            if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
+                download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
+            else
+                echo "==> WARNING: Could not find FastLogin download URL"
+            fi
+        fi
+    else
+        echo "==> Plugin already exists: FastLogin.jar"
+    fi
+
     PLUGIN_COUNT=$(find /data/plugins -name "*.jar" 2>/dev/null | wc -l)
     echo "==> Plugins directory ready ($PLUGIN_COUNT plugin(s) found)"
 }
