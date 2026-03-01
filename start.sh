@@ -94,26 +94,24 @@ EOF
 
 # ─── Setup FileBrowser ───
 setup_filebrowser() {
-    if [ ! -f "/data/filebrowser.db" ]; then
-        echo "==> Setting up FileBrowser..."
-        filebrowser config init --database /data/filebrowser.db
-        filebrowser config set \
-            --database /data/filebrowser.db \
-            --address 0.0.0.0 \
-            --port "${FILEBROWSER_PORT:-8080}" \
-            --root /data \
-            --log /data/filebrowser.log
-        # Default credentials: admin / admin (change after first login!)
-        filebrowser users add admin admin --database /data/filebrowser.db --perm.admin
-        echo "==> FileBrowser ready! Default login: admin / admin"
-    else
-        # Update port in case it changed
-        filebrowser config set \
-            --database /data/filebrowser.db \
-            --address 0.0.0.0 \
-            --port "${FILEBROWSER_PORT:-8080}"
-        echo "==> FileBrowser config updated"
-    fi
+    FB_PASS="${FILEBROWSER_PASS:-adminadmin123}"
+
+    # Reset DB to ensure clean credentials every deploy
+    rm -f /data/filebrowser.db
+    echo "==> Setting up FileBrowser..."
+    filebrowser config init --database /data/filebrowser.db
+    filebrowser config set \
+        --database /data/filebrowser.db \
+        --address 0.0.0.0 \
+        --port "${FILEBROWSER_PORT:-8080}" \
+        --root /data \
+        --log /data/filebrowser.log \
+        --auth.method=json
+    # Create admin user (password must be 12+ chars)
+    filebrowser users add admin "$FB_PASS" --database /data/filebrowser.db --perm.admin
+    echo "==> FileBrowser ready!"
+    echo "==> Login: admin / $FB_PASS"
+    echo "==> (Set FILEBROWSER_PASS env var to change the password)"
 }
 
 # ─── Ensure plugins directory exists ───
