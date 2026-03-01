@@ -22,8 +22,9 @@ COPY filebrowser-config.json /filebrowser-config.json
 RUN chmod +x /start.sh
 
 # Default environment variables (override in Railway dashboard)
+# Railway Pro: 32GB max per service — 28G for JVM, rest for OS + FileBrowser
 ENV MC_VERSION=latest \
-    MEMORY=2G \
+    MEMORY=28G \
     SERVER_PORT=25565 \
     FILEBROWSER_PORT=8080 \
     EULA=true \
