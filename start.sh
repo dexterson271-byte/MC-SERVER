@@ -159,27 +159,36 @@ setup_plugins() {
     # FastLogin (auto-authenticates premium players, blocks name stealing)
     echo "==> Checking FastLogin..."
     if [ ! -f "/data/plugins/FastLogin.jar" ]; then
-        echo "==> Trying Hangar API for FastLogin..."
-        # Try Hangar (PaperMC plugin repository) first
-        FASTLOGIN_URL=$(curl -s "https://hangar.papermc.io/api/v1/projects/FastLogin/versions?limit=1&offset=0&platform=PAPER" | jq -r '.result[0].downloads.PAPER.downloadUrl // empty' 2>/dev/null)
-        if [ -n "$FASTLOGIN_URL" ]; then
-            download_plugin "FastLogin.jar" "https://hangar.papermc.io${FASTLOGIN_URL}"
+
+        # Primary: TuxCoding/FastLogin GitHub releases
+        echo "==> Downloading FastLogin from TuxCoding/FastLogin..."
+        GH_RESPONSE=$(curl -s "https://api.github.com/repos/TuxCoding/FastLogin/releases/latest")
+        FASTLOGIN_URL=$(echo "$GH_RESPONSE" | jq -r '.assets[]? | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
+        echo "==> FastLogin URL: $FASTLOGIN_URL"
+        if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
+            download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
         else
-            echo "==> Trying GitHub for FastLogin..."
-            # Fallback to GitHub releases
-            FASTLOGIN_URL=$(curl -s "https://api.github.com/repos/games647/FastLogin/releases/latest" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
-            if [ -n "$FASTLOGIN_URL" ] && [ "$FASTLOGIN_URL" != "null" ]; then
-                download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
+            # If no jar in assets, try building the download URL from tag
+            TAG=$(echo "$GH_RESPONSE" | jq -r '.tag_name // empty')
+            if [ -n "$TAG" ]; then
+                echo "==> No jar asset found, checking all release assets..."
+                echo "$GH_RESPONSE" | jq -r '.assets[]? | "\(.name) -> \(.browser_download_url)"'
+                echo "==> Please manually download from https://github.com/TuxCoding/FastLogin/releases"
+                echo "==> and upload FastLogin.jar to /data/plugins/ via FileBrowser"
             else
-                echo "==> Trying Modrinth for FastLogin..."
-                # Fallback to Modrinth
-                FASTLOGIN_URL=$(curl -s 'https://api.modrinth.com/v2/project/fastlogin/version?loaders=["paper"]&limit=1' | jq -r '.[0].files[0].url // empty' 2>/dev/null)
-                if [ -n "$FASTLOGIN_URL" ]; then
-                    download_plugin "FastLogin.jar" "$FASTLOGIN_URL"
-                else
-                    echo "==> WARNING: Could not download FastLogin from any source!"
-                    echo "==> Please manually upload FastLogin.jar to /data/plugins/ via FileBrowser"
-                fi
+                echo "==> WARNING: Could not fetch FastLogin releases"
+                echo "==> Please manually download from https://github.com/TuxCoding/FastLogin/releases"
+            fi
+        fi
+
+        # Verify download
+        if [ -f "/data/plugins/FastLogin.jar" ]; then
+            FSIZE=$(stat -c%s "/data/plugins/FastLogin.jar" 2>/dev/null || echo 0)
+            if [ "$FSIZE" -lt 1000 ]; then
+                echo "==> WARNING: FastLogin.jar seems too small (${FSIZE} bytes), likely a bad download"
+                rm -f "/data/plugins/FastLogin.jar"
+            else
+                echo "==> FastLogin.jar verified (${FSIZE} bytes)"
             fi
         fi
     else
