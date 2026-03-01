@@ -39,7 +39,6 @@ ENV MC_VERSION=latest \
 EXPOSE ${SERVER_PORT}/tcp
 EXPOSE ${FILEBROWSER_PORT}/tcp
 
-# Volume for persistent data
-VOLUME /data
+# Persistent data lives at /data — attach a Railway Volume mounted to /data
 
 CMD ["/start.sh"]
