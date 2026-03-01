@@ -77,12 +77,14 @@ server-port=${SERVER_PORT:-25565}
 difficulty=${DIFFICULTY:-normal}
 gamemode=${GAMEMODE:-survival}
 max-players=${MAX_PLAYERS:-20}
-view-distance=${VIEW_DISTANCE:-10}
+view-distance=${VIEW_DISTANCE:-7}
+simulation-distance=${SIMULATION_DISTANCE:-5}
 motd=${MOTD:-A Minecraft Server on Railway}
 online-mode=false
 enable-command-block=true
 spawn-protection=0
 allow-flight=true
+network-compression-threshold=256
 EOF
         echo "==> server.properties created!"
     else
