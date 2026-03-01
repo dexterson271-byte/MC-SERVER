@@ -155,79 +155,71 @@ setup_plugins() {
 configure_authme() {
     mkdir -p /data/plugins/AuthMe
 
-    # Delete old database so players can re-register fresh
-    if [ -f "/data/plugins/AuthMe/authme.db" ]; then
-        echo "==> Removing old AuthMe database for clean start..."
+    # Delete old database so players can re-register fresh (only on first deploy)
+    if [ ! -f "/data/plugins/AuthMe/.configured" ]; then
+        echo "==> First-time AuthMe setup: removing old database..."
         rm -f /data/plugins/AuthMe/authme.db
     fi
 
     local config="/data/plugins/AuthMe/config.yml"
 
-    # Write a complete AuthMe config (overwrite every deploy to ensure correct settings)
-    echo "==> Writing AuthMe config..."
-    cat > "$config" <<'AUTHME_CFG'
-DataSource:
-    backend: SQLITE
-    mySQLHost: 127.0.0.1
-    mySQLPort: '3306'
-    mySQLUsername: authme
-    mySQLPassword: '12345'
-    mySQLDatabase: authme
-    mySQLTablename: authme
-    mySQLColumnGroup: ''
-settings:
-    sessions:
-        enabled: true
-        timeout: 1051200
-    restrictions:
-        maxRegPerIp: 0
-        maxLoginPerIp: 0
-        maxJoinPerIp: 0
-        allowedNicknameCharacters: '[a-zA-Z0-9_]*'
-        minNicknameLength: 3
-        maxNicknameLength: 20
-        kickOnWrongPassword: false
-        allowMovement: false
-        allowCommands: []
-        timeout: 120
-        displayOtherAccounts: false
-        removeJoinMessage: true
-        removeLeaveMessage: true
-    security:
-        minPasswordLength: 4
-        maxPasswordLength: 64
-        unsafePasswords:
-            - '123456'
-            - 'password'
-        passwordHash: SHA256
-    registration:
-        enabled: true
-        force: true
-        type: PASSWORD
-        secondArgument: CONFIRMATION
-    limbo:
-        allowFlight: false
-    GameMode:
-        ForceSurvivalMode: false
-    unrestrictions:
-        UnrestrictedName: []
-    permission:
-        EnablePermissionCheck: false
-Email:
-    noMailSent: true
-Hooks:
-    useEssentialsMotd: false
-    disableSocialSpy: true
-Protection:
-    enableProtection: false
-Purge:
-    useAutoPurge: false
-AUTHME_CFG
+    if [ -f "$config" ]; then
+        echo "==> Patching existing AuthMe config..."
 
-    echo "==> AuthMe configured!"
-    echo "==> Sessions: ON (timeout: ~2 years, IP-locked)"
-    echo "==> Min password length: 4 characters"
-    echo "==> Players only re-enter password if IP changes"
+        # Enable sessions
+        sed -i '/sessions:/{ n; s/enabled: false/enabled: true/ }' "$config"
+
+        # Set session timeout to ~2 years
+        sed -i 's/timeout: 10$/timeout: 1051200/' "$config"
+
+        # Relax minimum password length to 4
+        sed -i 's/minPasswordLength: [0-9]*/minPasswordLength: 4/' "$config"
+
+        # Disable maxRegPerIp limit (0 = unlimited)
+        sed -i 's/maxRegPerIp: [0-9]*/maxRegPerIp: 0/' "$config"
+
+        echo "==> AuthMe config patched!"
+        echo "==> Sessions: ON, timeout: ~2 years, min password: 4 chars"
+        touch /data/plugins/AuthMe/.configured
+    else
+        echo "==> AuthMe config not found yet (first run - will configure on next restart)"
+        echo "==> Setting up post-start auto-configuration..."
+
+        # Create a script that watches for config creation and patches it
+        cat > /data/plugins/AuthMe/patch-config.sh <<'PATCH'
+#!/bin/bash
+# Wait for AuthMe to generate its config on first start
+CONFIG="/data/plugins/AuthMe/config.yml"
+echo "[AuthMe Patcher] Waiting for config to be generated..."
+for i in $(seq 1 120); do
+    if [ -f "$CONFIG" ]; then
+        echo "[AuthMe Patcher] Config found! Patching..."
+        sleep 2  # Wait for AuthMe to finish writing
+
+        # Enable sessions
+        sed -i '/sessions:/{ n; s/enabled: false/enabled: true/ }' "$CONFIG"
+        # Set session timeout to ~2 years 
+        sed -i 's/timeout: 10$/timeout: 1051200/' "$CONFIG"
+        # Relax minimum password length
+        sed -i 's/minPasswordLength: [0-9]*/minPasswordLength: 4/' "$CONFIG"
+        # Unlimited registrations per IP
+        sed -i 's/maxRegPerIp: [0-9]*/maxRegPerIp: 0/' "$CONFIG"
+
+        touch /data/plugins/AuthMe/.configured
+        echo "[AuthMe Patcher] Config patched successfully!"
+        echo "[AuthMe Patcher] Sessions ON, timeout ~2 years, min pass 4 chars"
+        echo "[AuthMe Patcher] NOTE: Restart server once for session changes to take effect"
+        exit 0
+    fi
+    sleep 2
+done
+echo "[AuthMe Patcher] WARNING: Config was not generated within 4 minutes"
+PATCH
+        chmod +x /data/plugins/AuthMe/patch-config.sh
+        # Run patcher in background - it will wait for AuthMe to create config
+        nohup /data/plugins/AuthMe/patch-config.sh &>/data/authme-patcher.log &
+        echo "==> Background patcher started (will auto-configure when AuthMe generates config)"
+    fi
 }
 
 # ─── Run everything ───
