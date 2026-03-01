@@ -161,65 +161,57 @@ configure_authme() {
         rm -f /data/plugins/AuthMe/authme.db
     fi
 
-    local config="/data/plugins/AuthMe/config.yml"
+    # ALWAYS delete old config so AuthMe regenerates a clean default
+    # (previous deploys may have written a broken config)
+    rm -f /data/plugins/AuthMe/config.yml
+    echo "==> Removed old AuthMe config (will be regenerated with proper defaults)"
 
-    if [ -f "$config" ]; then
-        echo "==> Patching existing AuthMe config..."
+    echo "==> Setting up post-start auto-configuration..."
 
-        # Enable sessions
-        sed -i '/sessions:/{ n; s/enabled: false/enabled: true/ }' "$config"
-
-        # Set session timeout to ~2 years
-        sed -i 's/timeout: 10$/timeout: 1051200/' "$config"
-
-        # Relax minimum password length to 4
-        sed -i 's/minPasswordLength: [0-9]*/minPasswordLength: 4/' "$config"
-
-        # Disable maxRegPerIp limit (0 = unlimited)
-        sed -i 's/maxRegPerIp: [0-9]*/maxRegPerIp: 0/' "$config"
-
-        echo "==> AuthMe config patched!"
-        echo "==> Sessions: ON, timeout: ~2 years, min password: 4 chars"
-        touch /data/plugins/AuthMe/.configured
-    else
-        echo "==> AuthMe config not found yet (first run - will configure on next restart)"
-        echo "==> Setting up post-start auto-configuration..."
-
-        # Create a script that watches for config creation and patches it
-        cat > /data/plugins/AuthMe/patch-config.sh <<'PATCH'
+    # Create a script that watches for config creation and patches it
+    cat > /data/plugins/AuthMe/patch-config.sh <<'PATCH'
 #!/bin/bash
-# Wait for AuthMe to generate its config on first start
 CONFIG="/data/plugins/AuthMe/config.yml"
-echo "[AuthMe Patcher] Waiting for config to be generated..."
+echo "[AuthMe Patcher] Waiting for AuthMe to generate config..."
 for i in $(seq 1 120); do
     if [ -f "$CONFIG" ]; then
-        echo "[AuthMe Patcher] Config found! Patching..."
-        sleep 2  # Wait for AuthMe to finish writing
+        echo "[AuthMe Patcher] Config found! Waiting for AuthMe to finish writing..."
+        sleep 5
 
         # Enable sessions
         sed -i '/sessions:/{ n; s/enabled: false/enabled: true/ }' "$CONFIG"
-        # Set session timeout to ~2 years 
+        # Set session timeout to ~2 years
         sed -i 's/timeout: 10$/timeout: 1051200/' "$CONFIG"
-        # Relax minimum password length
+        # Relax minimum password length to 4
         sed -i 's/minPasswordLength: [0-9]*/minPasswordLength: 4/' "$CONFIG"
         # Unlimited registrations per IP
         sed -i 's/maxRegPerIp: [0-9]*/maxRegPerIp: 0/' "$CONFIG"
 
         touch /data/plugins/AuthMe/.configured
-        echo "[AuthMe Patcher] Config patched successfully!"
+        echo "[AuthMe Patcher] Config patched!"
         echo "[AuthMe Patcher] Sessions ON, timeout ~2 years, min pass 4 chars"
-        echo "[AuthMe Patcher] NOTE: Restart server once for session changes to take effect"
+        echo "[AuthMe Patcher] Sending reload command to AuthMe..."
+
+        # Send authme reload via screen/rcon or just echo to the MC stdin via supervisord
+        # Use supervisorctl to send the reload command to minecraft's stdin
+        echo "authme reload" | supervisorctl fg minecraft &>/dev/null || true
+
+        # Alternative: write to the server console directly
+        if [ -p /tmp/minecraft-console ]; then
+            echo "authme reload" > /tmp/minecraft-console
+        fi
+
+        echo "[AuthMe Patcher] Done! Config changes are active."
         exit 0
     fi
     sleep 2
 done
 echo "[AuthMe Patcher] WARNING: Config was not generated within 4 minutes"
 PATCH
-        chmod +x /data/plugins/AuthMe/patch-config.sh
-        # Run patcher in background - it will wait for AuthMe to create config
-        nohup /data/plugins/AuthMe/patch-config.sh &>/data/authme-patcher.log &
-        echo "==> Background patcher started (will auto-configure when AuthMe generates config)"
-    fi
+    chmod +x /data/plugins/AuthMe/patch-config.sh
+    # Run patcher in background
+    nohup /data/plugins/AuthMe/patch-config.sh &>/data/authme-patcher.log &
+    echo "==> Background patcher started (will auto-patch config when AuthMe generates it)"
 }
 
 # ─── Run everything ───
